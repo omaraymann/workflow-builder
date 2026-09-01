@@ -13,7 +13,7 @@ import {
   type Connection,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import { BRANCH_COLOR, type Branch, type DecisionNodeType, type WorkflowEdge } from "@/lib/types";
 import { DecisionNode } from "./DecisionNode";
@@ -39,6 +39,42 @@ function Canvas() {
   // Ids only have to be unique, not meaningful. A counter avoids the collisions
   // you get from using nodes.length after something has been deleted.
   const nextId = useRef(2);
+
+  // The text every node's question is asked about, and whatever came back from
+  // the last attempt to start a run.
+  const [input, setInput] = useState("A customer wrote: my order never arrived and I want a refund.");
+  const [status, setStatus] = useState<{ kind: "idle" | "sent" | "error"; message: string }>({
+    kind: "idle",
+    message: "",
+  });
+  const [running, setRunning] = useState(false);
+
+  const runWorkflow = useCallback(async () => {
+    setRunning(true);
+    setStatus({ kind: "idle", message: "" });
+
+    try {
+      const response = await fetch("/api/run", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nodes, edges, input }),
+      });
+      const result = await response.json();
+
+      if (!response.ok) {
+        setStatus({ kind: "error", message: result.error ?? "Something went wrong" });
+        return;
+      }
+      setStatus({
+        kind: "sent",
+        message: "Run started - watch the steps arrive at localhost:8288",
+      });
+    } catch {
+      setStatus({ kind: "error", message: "Could not reach the server" });
+    } finally {
+      setRunning(false);
+    }
+  }, [nodes, edges, input]);
 
   const addNode = useCallback(() => {
     const id = `n${nextId.current++}`;
@@ -120,6 +156,40 @@ function Canvas() {
           another node to set where that answer leads. Select a node or edge and
           press Backspace to delete it.
         </p>
+      </div>
+
+      <div className="pointer-events-auto absolute right-4 top-4 z-10 w-72 rounded-md border border-neutral-200 bg-white p-3 shadow-sm">
+        <label
+          htmlFor="workflow-input"
+          className="mb-1 block text-[10px] font-semibold uppercase tracking-widest text-neutral-400"
+        >
+          Text to judge
+        </label>
+        <textarea
+          id="workflow-input"
+          className="w-full resize-none rounded border border-neutral-200 bg-neutral-50 p-2 text-sm outline-none focus:border-neutral-400"
+          rows={4}
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          placeholder="Paste the text each question should be asked about."
+        />
+        <button
+          type="button"
+          onClick={runWorkflow}
+          disabled={running}
+          className="mt-2 w-full rounded-md bg-emerald-700 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-emerald-800 disabled:bg-neutral-300"
+        >
+          {running ? "Starting..." : "Run workflow"}
+        </button>
+        {status.message && (
+          <p
+            className={`mt-2 text-xs leading-relaxed ${
+              status.kind === "error" ? "text-red-700" : "text-emerald-800"
+            }`}
+          >
+            {status.message}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -64,7 +64,25 @@ Two rules keep the layers apart, both carried over from earlier assignments in t
 
 | Phase | What it adds | Status |
 |-------|--------------|--------|
-| 1 | Project setup, Inngest wired, env configured | in progress |
-| 2 | Canvas, node creation, edges, prompt editing | not started |
-| 3 | Execution through Inngest with AI branching | not started |
+| 1 | Project setup, Inngest wired, env configured | done |
+| 2 | Canvas, node creation, edges, prompt editing | done |
+| 3 | Execution through Inngest with AI branching | done |
 | 4 | Polish - execution state, logs, save/load, retries | not started |
+
+## How a run works
+
+1. **Run workflow** posts the graph and the input text to `/api/run`.
+2. That route validates the graph - every node has a question, exactly one node
+   has no arrow into it - and rejects a bad one with a 400 before spending a
+   single model call.
+3. It sends a `workflow/run` event to Inngest and answers `202` immediately. No
+   model call happens inside the request.
+4. The Inngest function walks the graph from the starting node. Each node is one
+   `step.run`, so a failure retries that node alone rather than replaying the run.
+5. Each step asks the model the node's question about the input and accepts only
+   `YES` or `NO`. Anything else throws, because an ambiguous answer cannot choose
+   an edge.
+6. That answer selects the outgoing edge with the matching handle. No edge means
+   the branch has ended, which is how a run finishes.
+7. A run is capped at 20 steps, so a graph containing a loop costs a few calls
+   rather than an unbounded number of them.
