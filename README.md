@@ -48,11 +48,13 @@ The `openai` package is the client, not the provider. It speaks a request shape 
 ## How it is put together
 
 ```
-src/app/                 pages and API routes
 src/app/api/inngest/     the endpoint the Inngest dev server talks to
-src/inngest/             the Inngest client, and the workflow functions
-src/components/flow/     React Flow canvas, custom nodes, custom edges
-src/lib/                 model calls, graph helpers, shared types
+src/app/api/run/         start a run, and report its progress
+src/inngest/             the Inngest client and the workflow runner
+src/components/flow/     canvas, node types, and the run panel
+src/lib/model.ts         the only file that calls a model
+src/lib/runStore.ts      progress for recent runs, held in memory
+src/lib/storage.ts       save, load, export and import a workflow
 ```
 
 Two rules keep the layers apart, both carried over from earlier assignments in this program:
@@ -67,7 +69,7 @@ Two rules keep the layers apart, both carried over from earlier assignments in t
 | 1 | Project setup, Inngest wired, env configured | done |
 | 2 | Canvas, node creation, edges, prompt editing | done |
 | 3 | Execution through Inngest with AI branching | done |
-| 4 | Polish - execution state, logs, save/load, retries | not started |
+| 4 | Outcome nodes, execution log, live state, save/load | done |
 
 ## How a run works
 
@@ -86,3 +88,35 @@ Two rules keep the layers apart, both carried over from earlier assignments in t
    the branch has ended, which is how a run finishes.
 7. A run is capped at 20 steps, so a graph containing a loop costs a few calls
    rather than an unbounded number of them.
+
+## Two kinds of node
+
+A **question** node is put to the model and branches on its answer. An **outcome**
+node ends a run and reports a verdict - it is never sent to the model, because
+"accept" is not a question. Earlier versions had only questions, so an endpoint
+worked only by accident: the model was asked "accept", answered something
+arbitrary, and the run stopped because nothing was connected after it.
+
+## Seeing what happened
+
+Every decision records the model's own reasoning alongside its verdict, and the
+run panel shows both. A screening tool that rejects someone and cannot say why is
+one you cannot defend.
+
+That reasoning is also what makes the answers correct. Asked for a bare YES or NO
+with no room to write, the model answers from impression - it read "1 year here,
+2 years there" and said NO to "three or more years in total", because it had
+nowhere to compute 1 + 2 first. These models think by writing; given no output
+budget, they cannot think at all. The fix was to let it reason in one field and
+commit in another, and validate only the second.
+
+## What is not built
+
+Run progress lives in memory in the Next.js process, so restarting the server
+loses in-flight runs and history. That is the right trade for a local tool and
+the wrong one for a deployment, where this belongs in Redis or a database - the
+shape of the code would not change.
+
+Every node also sees the same unchanged input; nothing accumulates along the
+path. That makes this a decision tree rather than an agent, and passing data
+along the edges is the change that would alter it.
